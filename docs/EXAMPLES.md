@@ -30,3 +30,12 @@ State names depend on the Azure DevOps process. Parent-child relations are disti
 - "Use the Azure DevOps skill to show Epic 100 and its Features with dependencies, without loading all PBI descriptions."
 - "Use the Azure DevOps skill to show the compact PBI/Task index for Feature 101."
 - "Use the Azure DevOps skill to retrieve the execution context for Feature 101, PBI 102, Task 103."
+
+## Start and complete work items (v1.1)
+
+```powershell
+pwsh $script start-work-item -Id 103
+pwsh $script complete-work-item -Id 103
+```
+
+Starting validates predecessors; completing validates direct children. Both respect the process's state categories and do not cascade. Confirm the user authorizes each write.
