@@ -79,6 +79,8 @@ Replace the IDs with actual work item IDs. For an installed extension, the agent
 | `get-execution-context` | Validated Feature/PBI/Task context |
 | `get-feature-tree` | Full Feature tree, potentially large |
 | `get-epic-tree` | Full Epic tree, potentially large |
+| `start-work-item` | Start a work item after predecessor and state checks |
+| `complete-work-item` | Complete a work item after direct-child checks |
 | `update-state` | Modify work-item state |
 | `add-comment` | Add work-item comment |
 
@@ -88,6 +90,14 @@ Replace the IDs with actual work item IDs. For an installed extension, the agent
 - The full-tree operations recursively fetch items and can generate many API calls. Prefer compact indexes for agent contexts. The Feature index and execution-context operations currently build a tree internally, so compact **output** does not guarantee few API calls.
 - `get-execution-context` returns active descriptions but does not include all raw relation objects; retrieve `get-work-item` when full relation details are required.
 - The script uses a PAT and PowerShell; it does not require the Microsoft Azure DevOps MCP. The MCP can be integrated separately in a future version.
-- Valid workflow states vary by process. This skill never decides when work is complete.
+- Valid workflow states vary by process. `start-work-item` and `complete-work-item` use workflow state categories and hierarchy/dependency guards; they do not verify code reviews, builds, PRs or approvals.
 
 See [examples](docs/EXAMPLES.md), [security](docs/SECURITY.md), [troubleshooting](docs/TROUBLESHOOTING.md) and [changes](CHANGELOG.md).
+## Lifecycle operations (v1.1)
+
+```bash
+pwsh -File ./skills/azure-devops/scripts/ado-workitems.ps1 start-work-item -Id 123
+pwsh -File ./skills/azure-devops/scripts/ado-workitems.ps1 complete-work-item -Id 123
+```
+
+These operations apply to Epic, Feature, Product Backlog Item, and Task. Starting requires a proposed state and completed predecessors. Completion requires an in-progress state and completed direct children. They never cascade state changes. If the process defines multiple states in a target category, use `update-state -State "..."` explicitly.
