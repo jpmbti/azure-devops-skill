@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.0 — 2026-10-13
+
+- Added `start-work-item` with predecessor and state-category checks.
+- Added `complete-work-item` with direct-child completion checks.
+- Lifecycle commands are idempotent for already-active/already-completed items and never cascade.
+- Added agent-independent lifecycle documentation and examples.
+- Live Azure DevOps integration tests have not been run.
+
 ## 1.0.0 — 2026-10-13
 
 - First independently packaged Azure DevOps work-item skill, derived from the supplied v11 implementation.
