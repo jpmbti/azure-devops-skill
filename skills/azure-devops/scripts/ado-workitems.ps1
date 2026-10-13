@@ -9,6 +9,8 @@ param(
     "get-execution-context",
     "get-epic-tree",
     "update-state",
+    "start-work-item",
+    "complete-work-item",
     "add-comment"
   )]
   [string]$Operation,
@@ -470,6 +472,109 @@ function UpdateState([int]$WorkItemId,[string]$NewState) {
   )
 }
 
+# Resolve workflow states by Azure DevOps state category instead of assuming English names.
+function WorkflowStates([string]$WorkItemType) {
+  $proj=[Uri]::EscapeDataString($Project)
+  $type=[Uri]::EscapeDataString($WorkItemType)
+  $response=Invoke-Ado "GET" "$BaseUrl/$proj/_apis/wit/workitemtypes/$type/states?api-version=$ApiVersion"
+  if ($null -eq $response.value) {
+    throw "Azure DevOps did not return workflow states for '$WorkItemType'. No change made."
+  }
+  @($response.value)
+}
+
+function StateCategory($StateDefinition) {
+  $category=$null
+  foreach($key in @("category","stateCategory")) {
+    $prop=$StateDefinition.PSObject.Properties[$key]
+    if ($null -ne $prop -and -not [string]::IsNullOrWhiteSpace([string]$prop.Value)) {
+      $category=[string]$prop.Value
+      break
+    }
+  }
+  if ($null -eq $category) {
+    throw "Workflow state '$($StateDefinition.name)' has no state category; cannot safely infer lifecycle."
+  }
+  $category.ToLowerInvariant()
+}
+
+function ResolveState($States,[string]$Category,[string]$CurrentState) {
+  $matches=@($States | Where-Object { (StateCategory $_) -eq $Category.ToLowerInvariant() })
+  if ($matches.Count -eq 0) {
+    throw "No '$Category' state configured for this work item type. No change made."
+  }
+  if ($matches.Count -eq 1) { return [string]$matches[0].name }
+  $current=@($matches | Where-Object { $_.name -eq $CurrentState })
+  if ($current.Count -eq 1) { return [string]$current[0].name }
+  throw "Multiple '$Category' states configured: $($matches.name -join ', '). Use update-state with an explicit state."
+}
+
+function AssertSupportedType($WorkItem) {
+  if (@("Epic","Feature","Product Backlog Item","Task") -cnotcontains [string]$WorkItem.type) {
+    throw "Unsupported work item type '$($WorkItem.type)' for lifecycle operation; use update-state explicitly."
+  }
+}
+
+function StartWorkItem([int]$WorkItemId) {
+  $item=WorkItem $WorkItemId
+  AssertSupportedType $item
+  $states=WorkflowStates $item.type
+  $current=@($states | Where-Object { $_.name -eq $item.state })
+  if ($current.Count -ne 1) { throw "Unknown current state '$($item.state)'. No change made." }
+  $category=StateCategory $current[0]
+  if ($category -eq "inprogress") {
+    return [pscustomobject]@{id=$item.id;type=$item.type;state=$item.state;changed=$false;reason="already-in-progress"}
+  }
+  if ($category -ne "proposed") {
+    throw "Cannot start #$WorkItemId from '$($item.state)' ($category). No change made."
+  }
+
+  $deps=DependencyInfo $item
+  if (@($deps.ambiguous).Count -gt 0) {
+    throw "Ambiguous dependency relations for #$WorkItemId; resolve them before starting."
+  }
+  foreach($predecessorId in @($deps.dependsOn)) {
+    $predecessor=WorkItem ([int]$predecessorId)
+    $preStates=WorkflowStates $predecessor.type
+    $preCurrent=@($preStates | Where-Object { $_.name -eq $predecessor.state })
+    if ($preCurrent.Count -ne 1 -or (StateCategory $preCurrent[0]) -ne "completed") {
+      throw "Predecessor #$predecessorId is not completed. Cannot start #$WorkItemId."
+    }
+  }
+
+  $target=ResolveState $states "inprogress" $item.state
+  $updated=UpdateState $WorkItemId $target
+  [pscustomobject]@{id=$updated.id;type=$updated.type;state=$updated.state;changed=$true}
+}
+
+function CompleteWorkItem([int]$WorkItemId) {
+  $item=WorkItem $WorkItemId
+  AssertSupportedType $item
+  $states=WorkflowStates $item.type
+  $current=@($states | Where-Object { $_.name -eq $item.state })
+  if ($current.Count -ne 1) { throw "Unknown current state '$($item.state)'. No change made." }
+  $category=StateCategory $current[0]
+  if ($category -eq "completed") {
+    return [pscustomobject]@{id=$item.id;type=$item.type;state=$item.state;changed=$false;reason="already-completed"}
+  }
+  if ($category -ne "inprogress") {
+    throw "Cannot complete #$WorkItemId from '$($item.state)' ($category). Start it first."
+  }
+
+  foreach($childId in (ChildIds $item)) {
+    $child=WorkItem ([int]$childId)
+    $childStates=WorkflowStates $child.type
+    $childCurrent=@($childStates | Where-Object { $_.name -eq $child.state })
+    if ($childCurrent.Count -ne 1 -or (StateCategory $childCurrent[0]) -ne "completed") {
+      throw "Child #$childId ($($child.type)) is not completed. Cannot complete #$WorkItemId."
+    }
+  }
+
+  $target=ResolveState $states "completed" $item.state
+  $updated=UpdateState $WorkItemId $target
+  [pscustomobject]@{id=$updated.id;type=$updated.type;state=$updated.state;changed=$true}
+}
+
 function AddComment([int]$WorkItemId,[string]$CommentText) {
   if ([string]::IsNullOrWhiteSpace($CommentText)) {
     throw "-Text is required."
@@ -514,6 +619,14 @@ switch($Operation) {
 
   "update-state" {
     UpdateState $Id $State | ConvertTo-Json -Depth 30
+  }
+
+  "start-work-item" {
+    StartWorkItem $Id | ConvertTo-Json -Depth 30
+  }
+
+  "complete-work-item" {
+    CompleteWorkItem $Id | ConvertTo-Json -Depth 30
   }
 
   "add-comment" {
