@@ -25,6 +25,8 @@ Never display or log PATs. Run the script located at `scripts/ado-workitems.ps1`
 | `get-execution-context` | `-Id <featureId> -PbiId <pbiId> -TaskId <taskId>` | Bounded Feature/PBI/Task contract, validated hierarchy |
 | `get-feature-tree` | `-Id <featureId>` | Complete selected Feature subtree |
 | `get-epic-tree` | `-Id <epicId>` | Complete Epic hierarchy; use sparingly |
+| `start-work-item` | `-Id <id>` | Start item after checking predecessor completion and workflow state |
+| `complete-work-item` | `-Id <id>` | Complete item after checking all direct children |
 | `update-state` | `-Id <id> -State "<state>"` | Change state to a valid process-specific state |
 | `add-comment` | `-Id <id> -Text "<comment>"` | Add a comment |
 
@@ -44,6 +46,12 @@ Parent/Child relations define hierarchy. Predecessor/Successor relations define 
 
 ## Safety
 
-Read operations are non-mutating. `update-state` and `add-comment` change Azure DevOps; perform them only when the user or invoking workflow authorizes the change. Never claim an update succeeded until the command returns success.
+Read operations are non-mutating. `start-work-item`, `complete-work-item`, `update-state` and `add-comment` change Azure DevOps; perform them only when the user or invoking workflow authorizes the change. Never claim an update succeeded until the command returns success.
 
 For detailed setup, examples and troubleshooting, see the repository README and docs.
+
+## Lifecycle operations (v1.1)
+
+`start-work-item` requires the current state to have category `Proposed`, and verifies all predecessor dependencies have category `Completed`. An already `InProgress` item is returned unchanged.
+
+`complete-work-item` requires the current state to have category `InProgress`, and verifies that all direct children have category `Completed`. An already completed item is returned unchanged. Both commands work with Epic, Feature, Product Backlog Item, and Task, and use Azure DevOps workflow state categories. If multiple target states share a category, the command fails and asks for explicit `update-state` rather than guessing. They do not cascade to parents or children. They do not verify builds, PRs or approvals. API process rules may impose additional restrictions.
