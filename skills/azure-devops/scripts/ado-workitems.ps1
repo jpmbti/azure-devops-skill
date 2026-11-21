@@ -11,6 +11,7 @@ param(
     "update-state",
     "start-work-item",
     "complete-work-item",
+    "find-comment",
     "add-comment"
   )]
   [string]$Operation,
@@ -348,11 +349,18 @@ function FeatureTree([int]$FeatureId) {
 
 
 function CompactExecutionItem($w) {
+  $d=DependencyInfo $w
   [pscustomobject]@{
     id=$w.id
     type=$w.type
     title=$w.title
     state=$w.state
+    priority=$w.priority
+    backlogPriority=$w.backlogPriority
+    stackRank=$w.stackRank
+    dependsOn=$d.dependsOn
+    successors=$d.successors
+    ambiguousDependencyRelations=$d.ambiguous
   }
 }
 
@@ -374,13 +382,9 @@ function FeatureIndex([int]$FeatureId) {
       }
     }
 
-    $pbis += [pscustomobject]@{
-      id=$pbi.id
-      type=$pbi.type
-      title=$pbi.title
-      state=$pbi.state
-      tasks=@($tasks)
-    }
+    $entry=CompactExecutionItem $pbi
+    $entry | Add-Member -NotePropertyName tasks -NotePropertyValue @($tasks)
+    $pbis += $entry
   }
 
   [pscustomobject]@{
@@ -575,6 +579,29 @@ function CompleteWorkItem([int]$WorkItemId) {
   [pscustomobject]@{id=$updated.id;type=$updated.type;state=$updated.state;changed=$true}
 }
 
+function FindComment([int]$WorkItemId,[string]$CommentText) {
+  if ([string]::IsNullOrWhiteSpace($CommentText)) { throw "-Text is required." }
+  $proj=[Uri]::EscapeDataString($Project)
+  $uri="$BaseUrl/$proj/_apis/wit/workItems/$WorkItemId/comments?api-version=6.0-preview.3"
+  $token=$null
+  $seen=[System.Collections.Generic.HashSet[string]]::new()
+  do {
+    $pageUri=$uri
+    if ($token) { $pageUri += "&continuationToken=$([Uri]::EscapeDataString($token))" }
+    $response=Invoke-Ado "GET" $pageUri
+    if ($null -eq $response -or $null -eq $response.PSObject.Properties["comments"]) {
+      throw "Azure DevOps comments response is missing the comments collection."
+    }
+    foreach ($comment in $response.comments) {
+      if ($comment.text -ceq $CommentText) { return @{id=$comment.id} }
+    }
+    $property=$response.PSObject.Properties["continuationToken"]
+    $token=if ($property) { $property.Value } else { $null }
+    if ($token -and -not $seen.Add($token)) { throw "Azure DevOps repeated a comments page token." }
+  } while ($token)
+  return @{found=$false}
+}
+
 function AddComment([int]$WorkItemId,[string]$CommentText) {
   if ([string]::IsNullOrWhiteSpace($CommentText)) {
     throw "-Text is required."
@@ -627,6 +654,10 @@ switch($Operation) {
 
   "complete-work-item" {
     CompleteWorkItem $Id | ConvertTo-Json -Depth 30
+  }
+
+  "find-comment" {
+    FindComment $Id $Text | ConvertTo-Json -Depth 30
   }
 
   "add-comment" {

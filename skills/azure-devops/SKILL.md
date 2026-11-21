@@ -28,6 +28,7 @@ Never display or log PATs. Run the script located at `scripts/ado-workitems.ps1`
 | `start-work-item` | `-Id <id>` | Start item after checking predecessor completion and workflow state |
 | `complete-work-item` | `-Id <id>` | Complete item after checking all direct children |
 | `update-state` | `-Id <id> -State "<state>"` | Change state to a valid process-specific state |
+| `find-comment` | `-Id <id> -Text "<comment>"` | Find the exact comment across pages (read-only). Returns its ID or `{"found":false}` |
 | `add-comment` | `-Id <id> -Text "<comment>"` | Add a comment |
 
 ### Example

@@ -82,6 +82,7 @@ Replace the IDs with actual work item IDs. For an installed extension, the agent
 | `start-work-item` | Start a work item after predecessor and state checks |
 | `complete-work-item` | Complete a work item after direct-child checks |
 | `update-state` | Modify work-item state |
+| `find-comment` | Find an exact work-item comment across pages (read-only) |
 | `add-comment` | Add work-item comment |
 
 ## Important limitations
